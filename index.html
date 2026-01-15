@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>사자성어 스피드 O/X 퀴즈</title>
+    <link href="https://fonts.googleapis.com/css2?family=Jua&display=swap" rel="stylesheet">
+    <style>
+        body { text-align: center; font-family: 'Jua', sans-serif; background-color: #E8F5E9; margin: 0; padding: 20px; }
+        h1 { color: #2E7D32; font-size: 36px; margin-bottom: 5px; }
+        .game-box { background: white; max-width: 500px; margin: 0 auto; border-radius: 20px; padding: 20px; box-shadow: 0 10px 20px rgba(0,0,0,0.1); border: 4px solid #4DB6AC; }
+        #question-area { font-size: 24px; color: #333; margin: 20px 0; min-height: 80px; display: flex; align-items: center; justify-content: center; word-break: keep-all; line-height: 1.4; background: #F1F8E9; border-radius: 10px; padding: 10px; }
+        #webcam-container { position: relative; width: 100%; border-radius: 15px; overflow: hidden; background: black; margin: 0 auto; }
+        #timer-overlay { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 100px; font-weight: bold; color: #FFEB3B; text-shadow: 4px 4px 10px rgba(0,0,0,0.8); display: none; pointer-events: none; }
+        #result-area { font-size: 32px; font-weight: bold; margin-top: 10px; height: 50px; }
+        .correct { color: #1976D2; } .wrong { color: #D32F2F; }
+        button { font-size: 24px; padding: 15px 40px; background: #2E7D32; color: white; border: none; border-radius: 50px; cursor: pointer; font-family: 'Jua'; margin-top: 20px; box-shadow: 0 4px 0 #1B5E20; }
+        button:active { transform: translateY(4px); box-shadow: none; }
+    </style>
+</head>
+<body>
+    <div class="game-box">
+        <h1>🦁 사자성어 O/X 퀴즈</h1>
+        <p>3초 카운트다운 후 정답 포즈!</p>
+        <div id="webcam-container">
+            <div id="timer-overlay">3</div>
+        </div>
+        <div id="question-area">준비되면 시작 버튼을 누르세요!</div>
+        <div id="result-area"></div>
+        <button type="button" onclick="startQuiz()" id="btn-start">게임 시작 ▶</button>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+
+    <script type="text/javascript">
+        const URL = "https://teachablemachine.withgoogle.com/models/0-DHo9maw/";
+        
+        // 🔥 나중에 8주차 할 때 여기에 주소 넣을 거야! (지금은 비워둬도 됨)
+        const SHEET_WEBAPP_URL = ""; 
+
+        const quizData = [
+            { q: "Q1. [유비무환]<br>비가 내리면 환자가 없다는 뜻이다?", a: "X" }, 
+            { q: "Q2. [금시초문]<br>이제야 비로소 처음 들었다는 뜻이다?", a: "O" },
+            { q: "Q3. [동문서답]<br>동쪽을 묻는데 서쪽을 답한다는 뜻이다?", a: "O" } 
+        ];
+
+        let model, webcam, maxPredictions;
+        let currentIdx = 0;
+
+        async function startQuiz() {
+            const btn = document.getElementById("btn-start");
+            if (!model) {
+                btn.innerText = "로딩 중...⏳";
+                const modelURL = URL + "model.json";
+                const metadataURL = URL + "metadata.json";
+                model = await tmImage.load(modelURL, metadataURL);
+                maxPredictions = model.getTotalClasses();
+                const flip = true; 
+                webcam = new tmImage.Webcam(300, 300, flip); 
+                await webcam.setup(); 
+                await webcam.play();
+                window.requestAnimationFrame(loop);
+                document.getElementById("webcam-container").appendChild(webcam.canvas);
+                document.getElementById("webcam-container").appendChild(document.getElementById("timer-overlay"));
+            }
+            btn.style.display = "none"; 
+            currentIdx = 0;
+            nextQuestion();
+        }
+
+        async function loop() { webcam.update(); window.requestAnimationFrame(loop); }
+
+        function nextQuestion() {
+            if (currentIdx >= quizData.length) {
+                document.getElementById("question-area").innerHTML = "🎉 퀴즈 종료! 🎉";
+                document.getElementById("result-area").innerText = "수고하셨습니다!";
+                const btn = document.getElementById("btn-start");
+                btn.innerText = "다시 하기 🔄";
+                btn.style.display = "inline-block";
+                return;
+            }
+            document.getElementById("result-area").innerText = "";
+            document.getElementById("question-area").innerHTML = quizData[currentIdx].q;
+            setTimeout(startCountdown, 2500);
+        }
+
+        function startCountdown() {
+            let count = 3;
+            const timerDiv = document.getElementById("timer-overlay");
+            timerDiv.style.display = "block";
+            timerDiv.innerText = count;
+            const timer = setInterval(() => {
+                count--;
+                if (count > 0) timerDiv.innerText = count;
+                else {
+                    clearInterval(timer);
+                    timerDiv.innerText = "찰칵!";
+                    checkAnswer(); 
+                    setTimeout(() => { timerDiv.style.display = "none"; }, 1000);
+                }
+            }, 1000);
+        }
+
+        async function checkAnswer() {
+            const prediction = await model.predict(webcam.canvas);
+            let userPose = "";
+            let maxProb = 0;
+            for (let i = 0; i < maxPredictions; i++) {
+                if (prediction[i].probability > maxProb) {
+                    maxProb = prediction[i].probability;
+                    userPose = prediction[i].className; 
+                }
+            }
+
+            const correctAnswer = quizData[currentIdx].a; 
+            const resultDiv = document.getElementById("result-area");
+            let isCorrect = userPose.toUpperCase().includes(correctAnswer);
+            let resultText = isCorrect ? "정답(O)" : "오답(X)";
+
+            if (isCorrect) resultDiv.innerHTML = `<span class="correct">⭕ 정답!</span>`;
+            else resultDiv.innerHTML = `<span class="wrong">❌ 땡!</span> (인식: ${userPose})`;
+
+            // 나중에 앱스 스크립트 연결되면 여기서 데이터 전송함
+            if (SHEET_WEBAPP_URL) {
+                fetch(SHEET_WEBAPP_URL, {
+                    method: "POST",
+                    body: new URLSearchParams({ "name": (currentIdx + 1) + "번 문제", "message": resultText })
+                });
+            }
+
+            currentIdx++;
+            setTimeout(nextQuestion, 3000);
+        }
+    </script>
+</body>
+</html>
